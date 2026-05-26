@@ -63,7 +63,15 @@ jobs:
 
           ls -lh CodeApp.ipa
 
-      - name: Upload IPA Release
+      - name: Compress IPA To ZIP
+
+        run: |
+
+          zip -r CodeApp-Unsigned.zip CodeApp.ipa
+
+          ls -lh CodeApp-Unsigned.zip
+
+      - name: Upload ZIP Release
 
         uses: softprops/action-gh-release@v2
 
@@ -74,7 +82,7 @@ jobs:
           name: Unsigned IPA
 
           files: |
-            CodeApp.ipa
+            CodeApp-Unsigned.zip
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
