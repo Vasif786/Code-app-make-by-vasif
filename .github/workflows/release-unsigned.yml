@@ -1,4 +1,4 @@
-name: Build And Release Unsigned IPAv
+name: Build And Release Unsigned IPAvm
 
 on:
   workflow_dispatch:
@@ -18,6 +18,23 @@ jobs:
 
       - name: Show Xcode Version
         run: xcodebuild -version
+
+      - name: Download Required Frameworks
+
+        run: |
+
+          chmod +x downloadFrameworks.sh
+          ./downloadFrameworks.sh
+
+      - name: Show Schemes
+
+        run: |
+
+          PROJECT=$(find . -name "*.xcodeproj" | head -n 1)
+
+          echo "PROJECT = $PROJECT"
+
+          xcodebuild -list -project "$PROJECT"
 
       - name: Build Unsigned App
 
