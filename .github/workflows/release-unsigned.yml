@@ -16,19 +16,20 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Xcode
-        run: sudo xcode-select -switch /Applications/Xcode.app
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
 
-      - name: Show Xcode Version
+      - name: Xcode Version
         run: xcodebuild -version
 
       - name: Download Frameworks
+
         run: |
 
           chmod +x downloadFrameworks.sh
           ./downloadFrameworks.sh
 
-      - name: Build App
+      - name: Build Archive
 
         run: |
 
@@ -41,16 +42,10 @@ jobs:
             -scheme "Code App" \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build \
+            -archivePath build/CodeApp.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            clean build
-
-      - name: Find Built App
-
-        run: |
-
-          find build -name "*.app"
+            archive
 
       - name: Create IPA
 
@@ -58,15 +53,17 @@ jobs:
 
           mkdir Payload
 
-          APP=$(find build -name "*.app" | head -n 1)
+          cp -R build/CodeApp.xcarchive/Products/Applications/*.app Payload/
 
-          echo "APP=$APP"
+          cd Payload
 
-          cp -R "$APP" Payload/
+          zip -r ../CodeApp.ipa .
 
-          zip -r CodeApp.ipa Payload
+          cd ..
 
-      - name: Upload Release
+          ls -lh CodeApp.ipa
+
+      - name: Upload IPA Release
 
         uses: softprops/action-gh-release@v2
 
