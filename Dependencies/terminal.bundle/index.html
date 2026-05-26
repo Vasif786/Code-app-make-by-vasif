@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>xterm</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <link rel="stylesheet" href="./xterm.css" />
+    <script src="./xterm.js"></script>
+    <script src="./xterm-addon-fit.js"></script>
+    <script src="./local-echo.js"></script>
+    <style>
+      body {
+        background-color: #ebebeb;
+        overflow: hidden;
+        margin: 0;
+      }
+      #overlay {
+        width: 0;
+        height: 0;
+        position: absolute;
+      }
+      /* body {background-color: #ECECEC} */
+      @media (prefers-color-scheme: dark) {
+        .xterm .composition-view {
+          /* TODO: Composition position got messed up somewhere */
+          background: #fff;
+          color: #000;
+        }
+
+        .xterm .xterm-viewport {
+          /* On OS X this is required in order for the scroll bar to appear fully opaque */
+          background-color: #fff;
+        }
+
+        body {
+          background-color: #1e1e1e;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div tabindex="0" id="overlay"></div>
+    <div id="terminal" style="width: 100%; height: 96vh"></div>
+    <script>
+      var defaultLightTheme = {
+        background: "#EBEBEB",
+        foreground: "#000000",
+        cursor: "#000000",
+      };
+      var defaultDarkTheme = {
+        background: "#1e1e1e",
+        foreground: "#ffffff",
+        cursor: "#ffffff",
+      };
+
+      var activeLightTheme = defaultLightTheme;
+      var activeDarkTheme = defaultDarkTheme;
+
+      function base64ToString(string) {
+        return decodeURIComponent(escape(window.atob(string)));
+      }
+
+      function applyBase64AsTheme(string, isDark) {
+        var decodedString = decodeURIComponent(escape(window.atob(string)));
+        var data = JSON.parse(decodedString);
+        applyTheme(data, isDark);
+      }
+
+      var term = new Terminal({
+        fontSize: 12,
+        fontFamily: "Menlo",
+        theme:
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? activeDarkTheme
+            : activeLightTheme,
+      });
+
+      function applyTheme(theme, isDark) {
+        if (theme == null) {
+          if (isDark) {
+            activeDarkTheme = defaultDarkTheme;
+          } else {
+            activeLightTheme = defaultLightTheme;
+          }
+        } else {
+          if (isDark) {
+            activeDarkTheme = theme;
+          } else {
+            activeLightTheme = theme;
+          }
+        }
+
+        if (
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+        ) {
+          term.options.theme = activeDarkTheme;
+          document.body.style.backgroundColor = activeDarkTheme.background;
+        } else {
+          term.options.theme = activeLightTheme;
+          document.body.style.backgroundColor = activeLightTheme.background;
+        }
+      }
+
+      window
+        .matchMedia("(prefers-color-scheme: dark)")
+        .addEventListener("change", (e) => {
+          const newColorScheme = e.matches ? "dark" : "light";
+
+          if (newColorScheme == "dark") {
+            document.body.style.backgroundColor = activeDarkTheme.background;
+            term.options.theme = activeDarkTheme;
+          } else {
+            document.body.style.backgroundColor = activeLightTheme.background;
+            term.options.theme = activeLightTheme;
+          }
+        });
+
+      const fitAddon = new FitAddon.FitAddon();
+      const localEcho = new LocalEchoController(term, { historySize: 50 });
+      term.loadAddon(fitAddon);
+      term.open(document.getElementById("terminal"));
+
+      // Cancel wheel events from scrolling the page if the terminal has scrollback
+      document.querySelector(".xterm").addEventListener("wheel", (e) => {
+        if (term.buffer.active.baseY > 0) {
+          e.preventDefault();
+        }
+      });
+
+      var isReading = false;
+
+      // Auto-completes common commands
+      function autocompleteCommonCommands(index, tokens) {
+        if (index == 0) {
+          var commands = prompt("autocomplete.commands");
+          return JSON.parse(commands);
+        } else {
+          return [];
+        }
+      }
+
+      // Auto-completes known files
+      function autocompleteCommonFiles(index, tokens) {
+        if (index == 0) return [];
+        var files = prompt("autocomplete.currentdir", tokens[index]);
+        return JSON.parse(files);
+      }
+
+      // Register the handlers
+      localEcho.addAutocompleteHandler(autocompleteCommonCommands);
+      localEcho.addAutocompleteHandler(autocompleteCommonFiles);
+
+      var controlActive = false;
+      var controlLocked = false;
+      var controlGeneration = 0;
+      var altActive = false;
+      var altLocked = false;
+      var altGeneration = 0;
+
+      function setControlActive(active, generation) {
+        controlActive = active;
+        controlGeneration = generation;
+      }
+
+      function setControlLocked(locked) {
+        controlLocked = locked;
+      }
+
+      function setAltActive(active, generation) {
+        altActive = active;
+        altGeneration = generation;
+      }
+
+      function setAltLocked(locked) {
+        altLocked = locked;
+      }
+
+      function getModifierStates() {
+        return {
+          controlActive: controlActive,
+          controlLocked: controlLocked,
+          controlGeneration: controlGeneration,
+          altActive: altActive,
+          altLocked: altLocked,
+          altGeneration: altGeneration
+        };
+      }
+
+      function getTerminalSize() {
+        return {
+          cols: term.cols,
+          rows: term.rows
+        };
+      }
+
+      function shouldApplyModifierToCsi(final, params) {
+        if (final >= "A" && final <= "D") {
+          return true;
+        }
+        if (final === "F" || final === "H") {
+          return true;
+        }
+        if (final === "~") {
+          var primaryParam = params.split(";")[0];
+          var keycode = parseInt(primaryParam, 10);
+          if (isNaN(keycode)) {
+            return false;
+          }
+          // Exclude bracketed paste mode sequences (ESC[200~ and ESC[201~).
+          // Modifying these would corrupt the paste protocol.
+          return keycode !== 200 && keycode !== 201;
+        }
+        return false;
+      }
+
+      function applyModifierToEscapeSequence(data, wasControlActive, wasAltActive) {
+        var modifier = 1 + (wasAltActive ? 2 : 0) + (wasControlActive ? 4 : 0);
+
+        // CSI sequences (ESC [ ...).
+        var csiMatch = data.match(/^\x1b\[([0-9;]*)([@-~])$/);
+        if (csiMatch) {
+          var params = csiMatch[1];
+          var final = csiMatch[2];
+
+          if (!shouldApplyModifierToCsi(final, params)) {
+            return data;
+          }
+
+          var parts = params.length ? params.split(";") : [];
+          if (parts.length === 0) {
+            parts = ["1", String(modifier)];
+          } else if (parts.length === 1) {
+            parts.push(String(modifier));
+          } else {
+            var lastIndex = parts.length - 1;
+            var existing = parseInt(parts[lastIndex], 10);
+            if (!isNaN(existing)) {
+              var modBits = Math.max(existing, 1) - 1;
+              if (wasAltActive) {
+                modBits |= 2;
+              }
+              if (wasControlActive) {
+                modBits |= 4;
+              }
+              parts[lastIndex] = String(modBits + 1);
+            } else {
+              parts.push(String(modifier));
+            }
+          }
+
+          return "\x1b[" + parts.join(";") + final;
+        }
+
+        // SS3 sequences (ESC O ...).
+        var ss3Match = data.match(/^\x1bO([A-Za-z])$/);
+        if (ss3Match) {
+          var final = ss3Match[1];
+          if (
+            (final >= "A" && final <= "D") ||
+            final === "F" ||
+            final === "H" ||
+            (final >= "P" && final <= "S")
+          ) {
+            return "\x1b[1;" + String(modifier) + final;
+          }
+        }
+
+        return data;
+      }
+
+      function applyModifierStates(data) {
+        // Capture which modifiers are active before potentially resetting
+        var wasControlActive = controlActive;
+        var wasAltActive = altActive;
+
+        if (!wasControlActive && !wasAltActive) {
+          return data;
+        }
+
+        // Reset modifiers only if not locked, and notify Swift
+        if (wasControlActive && !controlLocked) {
+          controlActive = false;
+          window.webkit.messageHandlers.toggleMessageHandler2.postMessage({
+            Event: "ControlReset",
+            Generation: controlGeneration,
+          });
+        }
+        if (wasAltActive && !altLocked) {
+          altActive = false;
+          window.webkit.messageHandlers.toggleMessageHandler2.postMessage({
+            Event: "AltReset",
+            Generation: altGeneration,
+          });
+        }
+
+        var result = data;
+
+        if (data.length === 1) {
+          // Apply Control: convert to control character (A-Z, @, [, \, ], ^, _)
+          if (wasControlActive) {
+            const code = result.toUpperCase().charCodeAt(0);
+            if (code >= 0x40 && code <= 0x5f) {
+              result = String.fromCharCode(code & 0x1f);
+            }
+          }
+
+          // Apply Alt: prepend ESC (meta key behavior)
+          if (wasAltActive) {
+            result = "\x1b" + result;
+          }
+        } else if (data.charCodeAt(0) === 0x1b) {
+          result = applyModifierToEscapeSequence(
+            data,
+            wasControlActive,
+            wasAltActive
+          );
+        }
+
+        return result;
+      }
+
+      function inputWithModifiers(data) {
+        term.input(applyModifierStates(data));
+      }
+
+      function startInteractive() {
+        localEcho.detach();
+      }
+
+      function stopInteractive() {
+        localEcho.attach();
+      }
+
+      term.onData((data) => {
+        data = applyModifierStates(data);
+        window.webkit.messageHandlers.toggleMessageHandler2.postMessage({
+          Event: "Data",
+          Input: data,
+        });
+      });
+
+      function readLine(prompt) {
+        if (isReading) {
+          localEcho.abortRead();
+        }
+        isReading = true;
+        localEcho.read(prompt).then((input) => {
+          readLine("");
+          window.webkit.messageHandlers.toggleMessageHandler2.postMessage({
+            Event: "Return",
+            Input: input,
+          });
+        });
+      }
+
+      function sendInterrupt() {
+        window.webkit.messageHandlers.toggleMessageHandler2.postMessage({
+          Event: "Data",
+          Input: "\u0003",
+        });
+      }
+
+      window.onresize = function (event) {
+        fitAddon.fit();
+        window.webkit.messageHandlers.toggleMessageHandler2.postMessage({
+          Event: "window.size.change",
+          Cols: term.cols,
+          Rows: term.rows,
+        });
+      };
+
+      window.webkit.messageHandlers.toggleMessageHandler2.postMessage({
+        Event: "Init",
+      });
+    </script>
+  </body>
+</html>

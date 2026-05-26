@@ -1,0 +1,82 @@
+name: Build And Release Unsigned IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+
+    runs-on: macos-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode.app
+
+      - name: Show Xcode Version
+        run: xcodebuild -version
+
+      - name: Build Unsigned App
+
+        run: |
+
+          xcodebuild \
+            -project Code.xcodeproj \
+            -scheme Code \
+            -sdk iphoneos \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            clean build
+
+      - name: Create Payload
+
+        run: |
+
+          mkdir Payload
+
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" | head -n 1)
+
+          cp -R "$APP_PATH" Payload/
+
+      - name: Create IPA
+
+        run: |
+
+          zip -r CodeApp-Unsigned.ipa Payload
+
+      - name: Create ZIP
+
+        run: |
+
+          zip CodeApp-Unsigned.zip CodeApp-Unsigned.ipa
+
+      - name: Generate Tag
+
+        id: tag
+
+        run: |
+
+          echo "tag=v$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+
+        uses: softprops/action-gh-release@v2
+
+        with:
+
+          tag_name: ${{ steps.tag.outputs.tag }}
+
+          name: Unsigned IPA Build
+
+          files: |
+            CodeApp-Unsigned.zip
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
