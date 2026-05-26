@@ -1,4 +1,4 @@
-name: Build And Release IPA
+name: Build And Release Unsigned IPAv
 
 on:
   workflow_dispatch:
@@ -16,24 +16,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Show Files
-        run: find . -maxdepth 2
-
       - name: Show Xcode Version
         run: xcodebuild -version
-
-      - name: Show Projects
-        run: find . -name "*.xcodeproj"
-
-      - name: Show Schemes
-
-        run: |
-
-          PROJECT=$(find . -name "*.xcodeproj" | head -n 1)
-
-          echo "PROJECT = $PROJECT"
-
-          xcodebuild -list -project "$PROJECT"
 
       - name: Build Unsigned App
 
@@ -45,13 +29,14 @@ jobs:
 
           xcodebuild \
             -project "$PROJECT" \
-            -scheme Code \
+            -scheme "Code App" \
             -sdk iphoneos \
             -configuration Release \
             CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
             clean build
 
-      - name: Create Payload
+      - name: Create Payload Folder
 
         run: |
 
@@ -59,7 +44,7 @@ jobs:
 
           APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" | head -n 1)
 
-          echo "APP_PATH = $APP_PATH"
+          echo "APP PATH = $APP_PATH"
 
           cp -R "$APP_PATH" Payload/
 
@@ -75,7 +60,7 @@ jobs:
 
           zip CodeApp-Unsigned.zip CodeApp-Unsigned.ipa
 
-      - name: Generate Tag
+      - name: Generate Release Tag
 
         id: tag
 
@@ -83,7 +68,7 @@ jobs:
 
           echo "tag=v$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
 
-      - name: Create Release
+      - name: Create GitHub Release
 
         uses: softprops/action-gh-release@v2
 
