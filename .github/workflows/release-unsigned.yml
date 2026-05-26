@@ -16,32 +16,67 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode.app
+      - name: Show Files
+        run: ls
 
       - name: Show Xcode Version
         run: xcodebuild -version
+
+      - name: Show Schemes
+        run: |
+
+          if [ -f "*.xcworkspace" ]; then
+            xcodebuild -list
+          else
+            xcodebuild -list -project *.xcodeproj
+          fi
 
       - name: Build Unsigned App
 
         run: |
 
-          xcodebuild \
-            -project Code.xcodeproj \
-            -scheme Code \
-            -sdk iphoneos \
-            -configuration Release \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            clean build
+          WORKSPACE=$(find . -name "*.xcworkspace" | head -n 1)
+          PROJECT=$(find . -name "*.xcodeproj" | head -n 1)
 
-      - name: Create Payload
+          echo "Workspace: $WORKSPACE"
+          echo "Project: $PROJECT"
+
+          if [ -n "$WORKSPACE" ]; then
+
+            xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme CodeApp \
+              -sdk iphoneos \
+              -configuration Release \
+              CODE_SIGNING_ALLOWED=NO \
+              clean build
+
+          else
+
+            xcodebuild \
+              -project "$PROJECT" \
+              -scheme CodeApp \
+              -sdk iphoneos \
+              -configuration Release \
+              CODE_SIGNING_ALLOWED=NO \
+              clean build
+
+          fi
+
+      - name: Find .app
+        run: |
+
+          find ~/Library/Developer/Xcode/DerivedData -name "*.app"
+
+      - name: Create Payload Folder
 
         run: |
 
           mkdir Payload
 
           APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" | head -n 1)
+
+          echo "APP PATH: $APP_PATH"
 
           cp -R "$APP_PATH" Payload/
 
@@ -57,7 +92,7 @@ jobs:
 
           zip CodeApp-Unsigned.zip CodeApp-Unsigned.ipa
 
-      - name: Generate Tag
+      - name: Generate Release Tag
 
         id: tag
 
@@ -65,7 +100,7 @@ jobs:
 
           echo "tag=v$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
 
-      - name: Create Release
+      - name: Create GitHub Release
 
         uses: softprops/action-gh-release@v2
 
