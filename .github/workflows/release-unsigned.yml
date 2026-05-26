@@ -1,4 +1,4 @@
-name: Build And Release Unsigned IPA
+name: Build And Release IPA
 
 on:
   workflow_dispatch:
@@ -16,18 +16,35 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Show Files
+        run: find . -maxdepth 2
+
       - name: Show Xcode Version
         run: xcodebuild -version
 
+      - name: Show Projects
+        run: find . -name "*.xcodeproj"
+
       - name: Show Schemes
-        run: xcodebuild -list -workspace SwiftWS.xcworkspace
+
+        run: |
+
+          PROJECT=$(find . -name "*.xcodeproj" | head -n 1)
+
+          echo "PROJECT = $PROJECT"
+
+          xcodebuild -list -project "$PROJECT"
 
       - name: Build Unsigned App
 
         run: |
 
+          PROJECT=$(find . -name "*.xcodeproj" | head -n 1)
+
+          echo "PROJECT = $PROJECT"
+
           xcodebuild \
-            -workspace SwiftWS.xcworkspace \
+            -project "$PROJECT" \
             -scheme Code \
             -sdk iphoneos \
             -configuration Release \
@@ -41,6 +58,8 @@ jobs:
           mkdir Payload
 
           APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" | head -n 1)
+
+          echo "APP_PATH = $APP_PATH"
 
           cp -R "$APP_PATH" Payload/
 
